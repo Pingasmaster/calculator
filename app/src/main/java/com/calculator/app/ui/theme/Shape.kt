@@ -16,7 +16,6 @@ object CalculatorShapes {
     val BackspaceButton: Shape = RoundedCornerShape(12.dp)    // M3 medium
     val BackspaceButtonPressed: Shape = RoundedCornerShape(8.dp) // M3 small
     val DisplayPanel: Shape = RoundedCornerShape(28.dp)       // M3 extraLarge
-    val HistoryCard: Shape = RoundedCornerShape(16.dp)        // M3 large
     val HistoryOverlay: Shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp) // M3 extraLarge
 }
 

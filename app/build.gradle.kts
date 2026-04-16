@@ -10,10 +10,10 @@ android {
 
     defaultConfig {
         applicationId = "com.calculator.app"
-        minSdk = 26
+        minSdk = 31
         targetSdk = 37
-        versionCode = 33
-        versionName = "1.0.32"
+        versionCode = 35
+        versionName = "1.0.34"
     }
 
     buildTypes {
@@ -29,7 +29,6 @@ android {
     }
 
     compileOptions {
-        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -68,9 +67,6 @@ dependencies {
     // Material 3 Adaptive (WindowSizeClass)
     implementation(libs.material3.adaptive)
 
-    // Graphics Shapes (for MaterialShapes)
-    implementation(libs.graphics.shapes)
-
     // Activity Compose
     implementation(libs.activity.compose)
 
@@ -91,9 +87,6 @@ dependencies {
 
     // Core KTX
     implementation(libs.core.ktx)
-
-    // Desugaring
-    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // Testing
     testImplementation(libs.junit)

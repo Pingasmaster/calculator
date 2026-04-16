@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white" alt="Min SDK 26"/>
+  <img src="https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white" alt="Min SDK 31"/>
   <img src="https://img.shields.io/badge/Kotlin-2.3-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin"/>
   <img src="https://img.shields.io/badge/Jetpack_Compose-1.11-4285F4?logo=jetpackcompose&logoColor=white" alt="Compose"/>
   <img src="https://img.shields.io/badge/Material_3-Expressive-E8DEF8" alt="M3 Expressive"/>
@@ -37,15 +37,11 @@ The app follows Material 3 Expressive guidelines throughout: expressive button s
 
 ## Building from source
 
-**Requirements:** Java 21, Android SDK 36
+**Requirements:** Java 21, Android SDK 37
 
 ```bash
 git clone https://github.com/Pingasmaster/calculator.git
 cd calculator
-
-# Generate signing keys for release builds (skip for debug)
-keytool -genkey -v -keystore release-keystore.jks -keyalg RSA -keysize 4096 -validity 10000 -alias calculator
-echo "your-password-here" > .password-signing-keys
 
 # Build (runs lint, assembles debug + release, copies APK to project root)
 ./build.sh
