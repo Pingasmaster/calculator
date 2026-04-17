@@ -1,5 +1,6 @@
 package com.calculator.app.ui.calculator
 
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.calculator.app.data.repository.HistoryRepository
@@ -8,6 +9,7 @@ import com.calculator.app.domain.model.CalculatorState
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -569,5 +571,574 @@ class CalculatorViewModelTest {
         viewModel.onButtonClick("%")
 
         assertEquals("50%", viewModel.state.value.expression)
+    }
+
+    // ========== Mid-expression editing (cursor-based) ==========
+
+    private fun placeCursorAt(pos: Int) {
+        viewModel.expressionField.edit {
+            selection = TextRange(pos)
+        }
+    }
+
+    @Test
+    fun `insert digit in middle of expression`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("2")
+        placeCursorAt(1)
+        viewModel.onButtonClick("5")
+        assertEquals("152", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `insert operator in middle of expression`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("2")
+        placeCursorAt(1)
+        viewModel.onButtonClick("+")
+        assertEquals("1+2", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `operator inserted in middle does not replace an adjacent operator`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("2")
+        // Expression: "1+2", cursor at end. Move to between '+' and '2'.
+        placeCursorAt(2)
+        viewModel.onButtonClick("×")
+        // Mid-expression path does not trigger replacement: gives "1+×2".
+        assertEquals("1+\u00D72", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `insert constant in middle of expression`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("2")
+        placeCursorAt(2)
+        viewModel.onButtonClick("\u03C0")
+        assertEquals("1+\u03C02", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `insert sqrt in middle of expression`() {
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("4")
+        placeCursorAt(2)
+        viewModel.onButtonClick("\u221A")
+        assertEquals("2+\u221A(4", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `backspace removes character before cursor in middle`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("3")
+        placeCursorAt(2)
+        viewModel.onButtonClick("\u232B")
+        assertEquals("13", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `backspace at position zero is no-op`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("3")
+        placeCursorAt(0)
+        viewModel.onButtonClick("\u232B")
+        assertEquals("123", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `backspace on lone left paren removes just the paren`() {
+        viewModel.onButtonClick("()")
+        assertEquals("(", viewModel.state.value.expression)
+        viewModel.onButtonClick("\u232B")
+        assertEquals("", viewModel.state.value.expression)
+        assertEquals(0, viewModel.state.value.openParenCount)
+    }
+
+    // ========== Decimal-point guard branches ==========
+
+    @Test
+    fun `decimal after e rejected`() {
+        viewModel.onButtonClick("e")
+        viewModel.onButtonClick(".")
+        assertEquals("e", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `decimal after percent rejected`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("0")
+        viewModel.onButtonClick("%")
+        viewModel.onButtonClick(".")
+        assertEquals("50%", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `decimal after factorial rejected`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("!")
+        viewModel.onButtonClick(".")
+        assertEquals("5!", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `decimal after operator allowed`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick(".")
+        assertEquals("5+.", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `decimal after left paren allowed`() {
+        viewModel.onButtonClick("()")
+        viewModel.onButtonClick(".")
+        assertEquals("(.", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `decimal in middle of existing decimal rejected`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick(".")
+        viewModel.onButtonClick("5")
+        // Place cursor between '.' and '5' then press '.'
+        placeCursorAt(2)
+        viewModel.onButtonClick(".")
+        assertEquals("1.5", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `two separate numbers can each have a decimal`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick(".")
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick(".")
+        viewModel.onButtonClick("5")
+        assertEquals("1.5+2.5", viewModel.state.value.expression)
+    }
+
+    // ========== toggleParentheses branches ==========
+
+    @Test
+    fun `toggle after constant pi inserts multiply-paren`() {
+        viewModel.onButtonClick("\u03C0")
+        viewModel.onButtonClick("()")
+        assertEquals("\u03C0\u00D7(", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `toggle after constant e inserts multiply-paren`() {
+        viewModel.onButtonClick("e")
+        viewModel.onButtonClick("()")
+        assertEquals("e\u00D7(", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `toggle after percent inserts multiply-paren`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("0")
+        viewModel.onButtonClick("%")
+        viewModel.onButtonClick("()")
+        assertEquals("50%\u00D7(", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `toggle after factorial inserts multiply-paren`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("!")
+        viewModel.onButtonClick("()")
+        assertEquals("5!\u00D7(", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `toggle after right paren inserts multiply-paren`() {
+        viewModel.onButtonClick("()")
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("()")
+        viewModel.onButtonClick("()")
+        // "(5)" then toggle: charBefore=')' → prefix "×(" → "(5)×("
+        assertEquals("(5)\u00D7(", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `toggle after operator inserts plain paren`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("()")
+        assertEquals("5+(", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `toggle after left paren opens nested paren not closes`() {
+        viewModel.onButtonClick("()")
+        viewModel.onButtonClick("()")
+        assertEquals("((", viewModel.state.value.expression)
+        assertEquals(2, viewModel.state.value.openParenCount)
+    }
+
+    @Test
+    fun `toggle right after sqrt opens nested paren`() {
+        viewModel.onButtonClick("\u221A")
+        viewModel.onButtonClick("()")
+        // After "√(" the prev char is '(' so prefix = "(" (no implicit multiply).
+        assertEquals("\u221A((", viewModel.state.value.expression)
+        assertEquals(2, viewModel.state.value.openParenCount)
+    }
+
+    @Test
+    fun `toggle with digit before open paren count closes`() {
+        viewModel.onButtonClick("()")
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("()")
+        assertEquals("(5)", viewModel.state.value.expression)
+        assertEquals(0, viewModel.state.value.openParenCount)
+    }
+
+    @Test
+    fun `toggle after result resets and opens paren`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("=")
+        viewModel.onButtonClick("()")
+        assertEquals("(", viewModel.state.value.expression)
+        assertEquals(1, viewModel.state.value.openParenCount)
+        assertFalse(viewModel.state.value.isResultDisplayed)
+    }
+
+    // ========== appendOperator after error (all operators) ==========
+
+    private fun forceErrorState() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("\u00F7")
+        viewModel.onButtonClick("0")
+        viewModel.onButtonClick("=")
+        assertTrue("expected error state", viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `plus after error clears state`() {
+        forceErrorState()
+        viewModel.onButtonClick("+")
+        assertEquals("", viewModel.state.value.expression)
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `minus after error clears state`() {
+        forceErrorState()
+        viewModel.onButtonClick("\u2212")
+        assertEquals("", viewModel.state.value.expression)
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `times after error clears state`() {
+        forceErrorState()
+        viewModel.onButtonClick("\u00D7")
+        assertEquals("", viewModel.state.value.expression)
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `divide after error clears state`() {
+        forceErrorState()
+        viewModel.onButtonClick("\u00F7")
+        assertEquals("", viewModel.state.value.expression)
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `percent after error clears state`() {
+        forceErrorState()
+        viewModel.onButtonClick("%")
+        assertEquals("", viewModel.state.value.expression)
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `factorial after error clears state`() {
+        forceErrorState()
+        viewModel.onButtonClick("!")
+        assertEquals("", viewModel.state.value.expression)
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    // ========== appendConstant branches ==========
+
+    @Test
+    fun `constant after operator appends directly`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("\u03C0")
+        assertEquals("5+\u03C0", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `constant after another constant appends directly`() {
+        viewModel.onButtonClick("\u03C0")
+        viewModel.onButtonClick("\u03C0")
+        assertEquals("\u03C0\u03C0", viewModel.state.value.expression)
+        // Preview should still evaluate via implicit multiply.
+        assertTrue(viewModel.state.value.previewResult.isNotEmpty())
+    }
+
+    @Test
+    fun `constant after error starts fresh`() {
+        forceErrorState()
+        viewModel.onButtonClick("\u03C0")
+        assertEquals("\u03C0", viewModel.state.value.expression)
+    }
+
+    // ========== appendSqrt branches ==========
+
+    @Test
+    fun `sqrt after operator appends`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("\u221A")
+        assertEquals("5+\u221A(", viewModel.state.value.expression)
+        assertEquals(1, viewModel.state.value.openParenCount)
+    }
+
+    @Test
+    fun `sqrt after digit appends directly and preview still computes`() {
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("\u221A")
+        assertEquals("2\u221A(", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `sqrt after error starts fresh`() {
+        forceErrorState()
+        viewModel.onButtonClick("\u221A")
+        assertEquals("\u221A(", viewModel.state.value.expression)
+        assertEquals(1, viewModel.state.value.openParenCount)
+    }
+
+    // ========== Preview branches ==========
+
+    @Test
+    fun `preview updates with unclosed parens`() {
+        viewModel.onButtonClick("(")
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("3")
+        assertEquals("5", viewModel.state.value.previewResult)
+    }
+
+    @Test
+    fun `preview empty on division by zero`() {
+        viewModel.onButtonClick("1")
+        viewModel.onButtonClick("\u00F7")
+        viewModel.onButtonClick("0")
+        assertEquals("", viewModel.state.value.previewResult)
+    }
+
+    @Test
+    fun `preview empty when result displayed`() {
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("3")
+        viewModel.onButtonClick("=")
+        assertEquals("", viewModel.state.value.previewResult)
+    }
+
+    @Test
+    fun `preview cleared after AC`() {
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("3")
+        assertEquals("5", viewModel.state.value.previewResult)
+        viewModel.onButtonClick("AC")
+        assertEquals("", viewModel.state.value.previewResult)
+    }
+
+    // ========== Equals: additional ==========
+
+    @Test
+    fun `equals saves closed parens expression to history`() = runTest {
+        viewModel.onButtonClick("(")
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("3")
+        viewModel.onButtonClick("=")
+        coVerify { historyRepo.addEntry("(2+3)", "5") }
+    }
+
+    @Test
+    fun `multiple equals presses are idempotent on result`() {
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("+")
+        viewModel.onButtonClick("3")
+        viewModel.onButtonClick("=")
+        val firstDisplay = viewModel.state.value.displayText
+        viewModel.onButtonClick("=")
+        assertEquals(firstDisplay, viewModel.state.value.displayText)
+    }
+
+    @Test
+    fun `equals on pure number evaluates to same number`() {
+        viewModel.onButtonClick("4")
+        viewModel.onButtonClick("2")
+        viewModel.onButtonClick("=")
+        assertEquals("42", viewModel.state.value.displayText)
+        assertTrue(viewModel.state.value.isResultDisplayed)
+    }
+
+    // ========== Clear (AC) ==========
+
+    @Test
+    fun `AC resets isError`() {
+        forceErrorState()
+        viewModel.onButtonClick("AC")
+        assertFalse(viewModel.state.value.isError)
+        assertEquals("", viewModel.state.value.expression)
+    }
+
+    @Test
+    fun `AC resets isResultDisplayed`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("=")
+        assertTrue(viewModel.state.value.isResultDisplayed)
+        viewModel.onButtonClick("AC")
+        assertFalse(viewModel.state.value.isResultDisplayed)
+    }
+
+    @Test
+    fun `AC persists cleared state`() {
+        val handle = SavedStateHandle()
+        val vm = CalculatorViewModel(historyRepo, handle)
+        vm.onButtonClick("5")
+        vm.onButtonClick("AC")
+        assertEquals("", handle["expression"])
+        assertEquals("0", handle["displayText"])
+    }
+
+    // ========== Backspace: additional ==========
+
+    @Test
+    fun `backspace after error clears state`() {
+        forceErrorState()
+        viewModel.onButtonClick("\u232B")
+        assertEquals("", viewModel.state.value.expression)
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `backspace on open paren not preceded by sqrt removes only paren`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("()")
+        // "5×(" — pos=3, char at pos-1 is '('. char at pos-2 is '×' not '√'.
+        assertEquals("5\u00D7(", viewModel.state.value.expression)
+        viewModel.onButtonClick("\u232B")
+        assertEquals("5\u00D7", viewModel.state.value.expression)
+    }
+
+    // ========== loadFromHistory ==========
+
+    @Test
+    fun `loadFromHistory clears isResultDisplayed`() {
+        viewModel.onButtonClick("5")
+        viewModel.onButtonClick("=")
+        assertTrue(viewModel.state.value.isResultDisplayed)
+        viewModel.loadFromHistory("1+2")
+        assertFalse(viewModel.state.value.isResultDisplayed)
+    }
+
+    @Test
+    fun `loadFromHistory clears isError`() {
+        forceErrorState()
+        viewModel.loadFromHistory("1+2")
+        assertFalse(viewModel.state.value.isError)
+    }
+
+    @Test
+    fun `loadFromHistory updates preview`() {
+        viewModel.loadFromHistory("2+3")
+        assertEquals("5", viewModel.state.value.previewResult)
+    }
+
+    @Test
+    fun `loadFromHistory saves state`() {
+        val handle = SavedStateHandle()
+        val vm = CalculatorViewModel(historyRepo, handle)
+        vm.loadFromHistory("1+2")
+        assertEquals("1+2", handle["expression"])
+    }
+
+    // ========== SavedStateHandle: additional ==========
+
+    @Test
+    fun `parenCount is recomputed from restored expression`() {
+        val handle = SavedStateHandle(
+            mapOf(
+                "expression" to "((1+2",
+                "displayText" to "((1+2",
+                "isResultDisplayed" to false,
+                "isError" to false,
+            )
+        )
+        val vm = CalculatorViewModel(historyRepo, handle)
+        assertEquals(2, vm.state.value.openParenCount)
+    }
+
+    @Test
+    fun `restore with partial handle uses defaults`() {
+        val handle = SavedStateHandle(mapOf("expression" to "42"))
+        val vm = CalculatorViewModel(historyRepo, handle)
+        assertEquals("42", vm.state.value.expression)
+        assertEquals("0", vm.state.value.displayText) // missing KEY_DISPLAY → default
+        assertFalse(vm.state.value.isResultDisplayed)
+        assertFalse(vm.state.value.isError)
+    }
+
+    @Test
+    fun `isResultDisplayed persists`() {
+        val handle = SavedStateHandle()
+        val vm = CalculatorViewModel(historyRepo, handle)
+        vm.onButtonClick("5")
+        vm.onButtonClick("=")
+        assertEquals(true, handle["isResultDisplayed"])
+    }
+
+    @Test
+    fun `after result saveState stores result expression not live field`() {
+        val handle = SavedStateHandle()
+        val vm = CalculatorViewModel(historyRepo, handle)
+        vm.onButtonClick("(")
+        vm.onButtonClick("2")
+        vm.onButtonClick("+")
+        vm.onButtonClick("3")
+        vm.onButtonClick("=")
+        // Auto-closed expression stored.
+        assertEquals("(2+3)", handle["expression"])
+        assertEquals("5", handle["displayText"])
+    }
+
+    // ========== History observation ==========
+
+    @Test
+    fun `observeHistory is queried at construction`() {
+        verify(atLeast = 1) { historyRepo.observeHistory() }
+    }
+
+    // ========== Initial construction ==========
+
+    @Test
+    fun `default construction yields initial state`() {
+        val handle = SavedStateHandle()
+        val vm = CalculatorViewModel(historyRepo, handle)
+        assertEquals("", vm.state.value.expression)
+        assertEquals("0", vm.state.value.displayText)
+        assertEquals(0, vm.state.value.openParenCount)
+        assertFalse(vm.state.value.isResultDisplayed)
+        assertFalse(vm.state.value.isError)
+        assertEquals("", vm.state.value.previewResult)
     }
 }

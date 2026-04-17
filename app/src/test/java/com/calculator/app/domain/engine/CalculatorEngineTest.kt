@@ -364,4 +364,174 @@ class CalculatorEngineTest {
         assertTrue(result.isSuccess)
         assertEquals("100000000000001", result.getOrNull())
     }
+
+    // ========== Integer formatting edge cases ==========
+
+    @Test
+    fun `15 nines stays plain`() {
+        val result = engine.evaluate("999999999999999")
+        assertEquals("999999999999999", result.getOrNull())
+    }
+
+    @Test
+    fun `16 digit integer switches to scientific`() {
+        // 999999999999999 + 1 = 1E15 (16-digit integer) — exceeds MAX_INTEGER_DIGITS.
+        val result = engine.evaluate("999999999999999+1")
+        assertTrue(result.isSuccess)
+        val value = result.getOrNull()!!
+        assertTrue("Expected scientific notation: $value", value.contains("E+"))
+    }
+
+    @Test
+    fun `negative 16 digit integer switches to scientific`() {
+        val result = engine.evaluate("-999999999999999-1")
+        assertTrue(result.isSuccess)
+        val value = result.getOrNull()!!
+        assertTrue("Expected scientific notation: $value", value.contains("E+"))
+        assertTrue("Expected negative sign: $value", value.startsWith("-"))
+    }
+
+    @Test
+    fun `negative zero displays as zero`() {
+        val result = engine.evaluate("0\u00D7(-1)")
+        assertEquals("0", result.getOrNull())
+    }
+
+    // ========== Decimal formatting edge cases ==========
+
+    @Test
+    fun `two thirds rounds HALF_UP to ten places`() {
+        val result = engine.evaluate("2/3")
+        assertEquals("0.6666666667", result.getOrNull())
+    }
+
+    @Test
+    fun `one seventh capped at ten places`() {
+        val result = engine.evaluate("1/7")
+        val value = result.getOrNull()!!
+        val fractional = value.substringAfter('.')
+        assertTrue(fractional.length <= 10)
+        assertTrue(value.startsWith("0.142857"))
+    }
+
+    @Test
+    fun `one over one thousand twenty four is exact ten places`() {
+        assertEquals("0.0009765625", engine.evaluate("1/1024").getOrNull())
+    }
+
+    @Test
+    fun `one sixteenth is exact short decimal`() {
+        assertEquals("0.0625", engine.evaluate("1/16").getOrNull())
+    }
+
+    @Test
+    fun `one thirty-second is exact short decimal`() {
+        assertEquals("0.03125", engine.evaluate("1/32").getOrNull())
+    }
+
+    @Test
+    fun `one billionth preserves scale`() {
+        assertEquals("0.000000001", engine.evaluate("1/1000000000").getOrNull())
+    }
+
+    @Test
+    fun `negative one quarter`() {
+        assertEquals("-0.25", engine.evaluate("-1/4").getOrNull())
+    }
+
+    @Test
+    fun `one eleventh rounds at ten places`() {
+        val value = engine.evaluate("1/11").getOrNull()!!
+        assertTrue("value=$value", value.startsWith("0.0909"))
+        val fractional = value.substringAfter('.')
+        assertTrue(fractional.length <= 10)
+    }
+
+    // ========== Scientific notation for large factorials ==========
+
+    @Test
+    fun `169 factorial uses scientific notation`() {
+        val result = engine.evaluate("169!")
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrNull()!!.contains("E+"))
+    }
+
+    @Test
+    fun `150 factorial uses scientific notation`() {
+        val result = engine.evaluate("150!")
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrNull()!!.contains("E+"))
+    }
+
+    // ========== Sequential evaluations ==========
+
+    @Test
+    fun `sequential evaluations are independent`() {
+        assertEquals("3", engine.evaluate("1+2").getOrNull())
+        assertEquals("5", engine.evaluate("2+3").getOrNull())
+        assertEquals("7", engine.evaluate("3+4").getOrNull())
+        assertTrue(engine.evaluate("1\u00F70").isFailure)
+        assertEquals("9", engine.evaluate("4+5").getOrNull())
+    }
+
+    // ========== Mixed ASCII and unicode operators ==========
+
+    @Test
+    fun `mixed ASCII and unicode operators`() {
+        val result = engine.evaluate("2\u00D73+4\u22121\u00F72")
+        // 2*3 + 4 - 1/2 = 6 + 4 - 0.5 = 9.5
+        assertEquals("9.5", result.getOrNull())
+    }
+
+    // ========== Long expressions ==========
+
+    @Test
+    fun `50 term addition chain`() {
+        val expr = (1..50).joinToString("+") { it.toString() }
+        val result = engine.evaluate(expr)
+        assertEquals("1275", result.getOrNull())
+    }
+
+    @Test
+    fun `50 term multiplication chain of ones`() {
+        val expr = (1..50).joinToString("\u00D7") { "1" }
+        assertEquals("1", engine.evaluate(expr).getOrNull())
+    }
+
+    // ========== Error type pass-through ==========
+
+    @Test
+    fun `division by zero surfaces ArithmeticException`() {
+        val result = engine.evaluate("1\u00F70")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is ArithmeticException)
+    }
+
+    @Test
+    fun `unknown character surfaces IllegalArgumentException`() {
+        val result = engine.evaluate("1@2")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun `factorial over max surfaces ArithmeticException`() {
+        val result = engine.evaluate("171!")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is ArithmeticException)
+    }
+
+    @Test
+    fun `unmatched left paren surfaces IllegalArgumentException`() {
+        val result = engine.evaluate("(1+2")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun `sqrt of negative surfaces ArithmeticException`() {
+        val result = engine.evaluate("\u221A(-4)")
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is ArithmeticException)
+    }
 }
