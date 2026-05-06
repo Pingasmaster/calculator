@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.calculator.app.data.local.preferences.ThemeMode
@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
                 dynamicColor = dynamicColor,
                 oledBlack = oledBlack,
             ) {
-                val windowAdaptiveInfo = currentWindowAdaptiveInfo()
+                val windowAdaptiveInfo = currentWindowAdaptiveInfoV2()
                 AdaptiveCalculatorLayout(
                     windowAdaptiveInfo = windowAdaptiveInfo,
                     userPreferences = prefs,
